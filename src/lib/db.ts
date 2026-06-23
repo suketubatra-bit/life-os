@@ -68,6 +68,28 @@ async function initSchema(): Promise<void> {
       suggestions TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
+    `CREATE TABLE IF NOT EXISTS trips (
+      id TEXT PRIMARY KEY,
+      origin TEXT NOT NULL,
+      destination TEXT NOT NULL,
+      depart_date TEXT NOT NULL,
+      return_date TEXT,
+      target_price INTEGER,
+      currency TEXT NOT NULL DEFAULT 'INR',
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'watching' CHECK(status IN ('watching','booked','archived')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS price_checks (
+      id TEXT PRIMARY KEY,
+      trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+      price INTEGER NOT NULL,
+      currency TEXT NOT NULL,
+      airline TEXT,
+      depart_at TEXT,
+      link TEXT,
+      checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
     // Seed spheres
     `INSERT OR IGNORE INTO spheres (id, name, emoji, color, sort_order) VALUES ('health','Health','💪','#fecdd3',1)`,
     `INSERT OR IGNORE INTO spheres (id, name, emoji, color, sort_order) VALUES ('career','Career','🚀','#fef08a',2)`,
@@ -109,4 +131,16 @@ export type Goal = {
 
 export type Task = {
   id: string; goal_id: string; title: string; done: number; sort_order: number; created_at: string
+}
+
+export type Trip = {
+  id: string; origin: string; destination: string
+  depart_date: string; return_date: string | null
+  target_price: number | null; currency: string; notes: string | null
+  status: 'watching' | 'booked' | 'archived'; created_at: string
+}
+
+export type PriceCheck = {
+  id: string; trip_id: string; price: number; currency: string
+  airline: string | null; depart_at: string | null; link: string | null; checked_at: string
 }

@@ -16,6 +16,26 @@ type AgentCheckin = {
   agent: { id: string; name: string; meaning: string; emoji: string; sphereName: string; color: string; subtitle: string; sphereId: string }
   checkin: { message: string; questions: string[]; suggestions: string[]; created_at: string } | null
 }
+type Trip = {
+  id: string; origin: string; destination: string
+  depart_date: string; return_date: string | null
+  target_price: number | null; currency: string; notes: string | null
+  status: 'watching' | 'booked' | 'archived'
+  latest_price: number | null; latest_link: string | null; latest_checked_at: string | null
+}
+type TravelDeal = {
+  tripId: string; route: string; price: string; rawPrice: number
+  belowTarget: boolean; dropFromLast: number | null; airline: string | null; link: string | null
+}
+type YatraCheckin = {
+  agent: { name: string; emoji: string; color: string; sphereName: string; meaning: string }
+  checkin: { message: string; questions: string[]; suggestions: string[]; created_at: string } | null
+}
+
+function fmtMoney(amount: number, currency = 'INR') {
+  try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount) }
+  catch { return `${currency} ${amount.toLocaleString('en-IN')}` }
+}
 
 const AGENTS = [
   { id: 'praan', name: 'Praan', meaning: 'Life Force', emoji: '💪', sphereId: 'health', sphereName: 'Health', subtitle: 'fitness, sleep, nutrition', color: '#fecdd3' },
@@ -37,10 +57,15 @@ export default function Dashboard() {
   const [agentsLoading, setAgentsLoading] = useState(false)
   const [activeSphere, setActiveSphere] = useState<string | null>(null)
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null)
-  const [section, setSection] = useState<'home' | 'goals'>('home')
+  const [section, setSection] = useState<'home' | 'goals' | 'travel'>('home')
   const [filter, setFilter] = useState<'active' | 'completed'>('active')
   const [calMsg, setCalMsg] = useState<string | null>(null)
   const [cleanupDone, setCleanupDone] = useState(false)
+  const [trips, setTrips] = useState<Trip[]>([])
+  const [yatra, setYatra] = useState<YatraCheckin | null>(null)
+  const [deals, setDeals] = useState<TravelDeal[]>([])
+  const [checkingPrices, setCheckingPrices] = useState(false)
+  const [tripForm, setTripForm] = useState({ origin: '', destination: '', depart_date: '', return_date: '', target_price: '', notes: '' })
 
   const load = useCallback(async () => {
     const [goalsRes, calRes, agentsRes] = await Promise.all([
@@ -94,6 +119,37 @@ export default function Dashboard() {
     setCleanupDone(true)
   }
 
+  const loadTravel = useCallback(async () => {
+    const [tripsRes, yatraRes] = await Promise.all([fetch('/api/trips'), fetch('/api/trips/check')])
+    setTrips(await tripsRes.json())
+    setYatra(await yatraRes.json())
+  }, [])
+
+  useEffect(() => { if (section === 'travel') loadTravel() }, [section, loadTravel])
+
+  async function addTrip(e: React.FormEvent) {
+    e.preventDefault()
+    if (!tripForm.origin || !tripForm.destination || !tripForm.depart_date) return
+    await fetch('/api/trips', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tripForm) })
+    setTripForm({ origin: '', destination: '', depart_date: '', return_date: '', target_price: '', notes: '' })
+    loadTravel()
+  }
+
+  async function deleteTrip(id: string) {
+    if (!confirm('Stop watching this trip?')) return
+    await fetch(`/api/trips/${id}`, { method: 'DELETE' })
+    loadTravel()
+  }
+
+  async function checkPrices() {
+    setCheckingPrices(true)
+    const res = await fetch('/api/trips/check', { method: 'POST' })
+    const data = await res.json()
+    setDeals(data.deals ?? [])
+    await loadTravel()
+    setCheckingPrices(false)
+  }
+
   const filteredGoals = goals.filter(g => {
     if (g.status !== filter) return false
     if (activeSphere && g.sphere_id !== activeSphere) return false
@@ -119,6 +175,10 @@ export default function Dashboard() {
                 className={`text-sm px-3 py-1 rounded-md transition-colors ${section === 'goals' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}>
                 Goals
               </button>
+              <button onClick={() => setSection('travel')}
+                className={`text-sm px-3 py-1 rounded-md transition-colors ${section === 'travel' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}>
+                ✈️ Travel
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -143,12 +203,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      {section === 'home' ? (
+      {section === 'home' && (
         <main className="max-w-6xl mx-auto px-6 py-10 space-y-12">
           {/* Hero */}
           <section className="text-center space-y-2">
             <h2 className="text-4xl font-bold tracking-tight">Your Personal Life OS</h2>
-            <p className="text-zinc-400 text-lg">Goals + to-dos + daily motivation — powered by 8 AI agents</p>
+            <p className="text-zinc-400 text-lg">Goals + to-dos + daily motivation — powered by 9 AI agents</p>
           </section>
 
           {/* Life Spheres Grid */}
@@ -296,7 +356,9 @@ export default function Dashboard() {
             </section>
           )}
         </main>
-      ) : (
+      )}
+
+      {section === 'goals' && (
         /* Goals Section */
         <main className="max-w-5xl mx-auto px-6 py-6 space-y-6">
           <div className="flex gap-2 flex-wrap">
@@ -351,6 +413,160 @@ export default function Dashboard() {
               ))}
             </div>
           )}
+        </main>
+      )}
+
+      {section === 'travel' && (
+        <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+          {/* Yatra header */}
+          <section className="rounded-2xl overflow-hidden border border-cyan-900/40">
+            <div className="px-6 py-5 flex items-center justify-between" style={{ backgroundColor: '#a5f3fc15' }}>
+              <div className="flex items-center gap-3">
+                <span className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: '#a5f3fc' }}>✈️</span>
+                <div>
+                  <h2 className="text-xl font-bold">Yatra <span className="text-zinc-400 font-normal text-sm">— Journey</span></h2>
+                  <p className="text-zinc-400 text-sm">Your travel agent · tracks fares & sends price alerts</p>
+                </div>
+              </div>
+              <button onClick={checkPrices} disabled={checkingPrices}
+                className="text-sm bg-cyan-600 text-white px-4 py-2 rounded-lg hover:bg-cyan-700 font-medium transition-colors disabled:opacity-50">
+                {checkingPrices ? 'Checking…' : 'Check prices now'}
+              </button>
+            </div>
+            {yatra?.checkin && (
+              <div className="px-6 py-5 space-y-4 bg-zinc-900/40">
+                <p className="text-zinc-200 leading-relaxed">{yatra.checkin.message}</p>
+                {yatra.checkin.suggestions.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-2">Suggestions</h4>
+                    {yatra.checkin.suggestions.map((s, i) => <p key={i} className="text-zinc-300 text-sm mb-1">✦ {s}</p>)}
+                  </div>
+                )}
+                <p className="text-xs text-zinc-600">Last check: {new Date(yatra.checkin.created_at).toLocaleString()}</p>
+              </div>
+            )}
+          </section>
+
+          {/* Deal alerts from latest check */}
+          {deals.length > 0 && (
+            <section className="space-y-2">
+              <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Latest fares</h3>
+              {deals.map(d => (
+                <div key={d.tripId} className={`rounded-xl p-4 border flex items-center justify-between ${d.belowTarget ? 'bg-emerald-900/30 border-emerald-700' : 'bg-zinc-900 border-zinc-800'}`}>
+                  <div>
+                    <p className="font-semibold">{d.route} — {d.price}</p>
+                    <p className="text-xs text-zinc-400">
+                      {d.belowTarget && <span className="text-emerald-400">🎯 Below target! </span>}
+                      {(d.dropFromLast ?? 0) > 0 && <span className="text-cyan-400">📉 Dropped {fmtMoney(d.dropFromLast!)} </span>}
+                      {d.airline && `· ${d.airline}`}
+                    </p>
+                  </div>
+                  {d.link && <a href={d.link} target="_blank" rel="noopener noreferrer" className="text-sm text-cyan-400 hover:text-cyan-300 font-medium">View fare →</a>}
+                </div>
+              ))}
+            </section>
+          )}
+
+          {/* Add a trip */}
+          <section className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
+            <h3 className="font-semibold mb-4">Watch a new trip</h3>
+            <form onSubmit={addTrip} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-1">From (airport code)</label>
+                  <input value={tripForm.origin} onChange={e => setTripForm({ ...tripForm, origin: e.target.value.toUpperCase() })}
+                    placeholder="DEL" maxLength={3}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm uppercase placeholder:text-zinc-600 focus:outline-none focus:border-cyan-600" />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-1">To (airport code)</label>
+                  <input value={tripForm.destination} onChange={e => setTripForm({ ...tripForm, destination: e.target.value.toUpperCase() })}
+                    placeholder="LHR" maxLength={3}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm uppercase placeholder:text-zinc-600 focus:outline-none focus:border-cyan-600" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-1">Departure</label>
+                  <input type="date" value={tripForm.depart_date} onChange={e => setTripForm({ ...tripForm, depart_date: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-600" />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-1">Return (optional)</label>
+                  <input type="date" value={tripForm.return_date} onChange={e => setTripForm({ ...tripForm, return_date: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-600" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-1">Target price ₹ (alert below)</label>
+                  <input type="number" value={tripForm.target_price} onChange={e => setTripForm({ ...tripForm, target_price: e.target.value })}
+                    placeholder="45000"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-cyan-600" />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-1">Notes (optional)</label>
+                  <input value={tripForm.notes} onChange={e => setTripForm({ ...tripForm, notes: e.target.value })}
+                    placeholder="Diwali trip home"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-cyan-600" />
+                </div>
+              </div>
+              <button type="submit"
+                className="w-full bg-cyan-600 text-white py-2.5 rounded-lg hover:bg-cyan-700 font-medium text-sm transition-colors">
+                + Watch this trip
+              </button>
+            </form>
+          </section>
+
+          {/* Watched trips */}
+          <section>
+            <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Watched trips</h3>
+            {trips.filter(t => t.status === 'watching').length === 0 ? (
+              <div className="text-center py-12 text-zinc-500">
+                <div className="text-4xl mb-3">🧳</div>
+                <p className="font-medium">No trips yet</p>
+                <p className="text-sm mt-1">Add a trip above and Yatra will track its fares for you.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {trips.filter(t => t.status === 'watching').map(trip => {
+                  const daysOut = Math.ceil((new Date(trip.depart_date).getTime() - Date.now()) / 86400000)
+                  const hit = trip.latest_price != null && trip.target_price != null && trip.latest_price <= trip.target_price
+                  return (
+                    <div key={trip.id} className="bg-zinc-900 rounded-xl p-4 border border-zinc-800 flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-lg">{trip.origin} → {trip.destination}</span>
+                          <span className="text-xs text-zinc-500">{daysOut > 0 ? `${daysOut} days out` : 'past'}</span>
+                        </div>
+                        <p className="text-sm text-zinc-400 mt-0.5">
+                          {new Date(trip.depart_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {trip.return_date ? ` → ${new Date(trip.return_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ' · one-way'}
+                        </p>
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
+                          {trip.latest_price != null ? (
+                            <span className={`text-sm font-semibold px-2 py-0.5 rounded-full ${hit ? 'bg-emerald-900/50 text-emerald-300' : 'bg-zinc-800 text-zinc-300'}`}>
+                              {fmtMoney(trip.latest_price, trip.currency)}{hit && ' 🎯'}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-zinc-600">No price yet — hit “Check prices now”</span>
+                          )}
+                          {trip.target_price != null && (
+                            <span className="text-xs text-zinc-500">Target {fmtMoney(trip.target_price, trip.currency)}</span>
+                          )}
+                          {trip.notes && <span className="text-xs text-zinc-500 italic">{trip.notes}</span>}
+                        </div>
+                      </div>
+                      <button onClick={() => deleteTrip(trip.id)} className="text-zinc-600 hover:text-red-400 text-sm">✕</button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <p className="text-xs text-zinc-600 mt-4">
+              Live fares need a free Travelpayouts API token (set <code className="text-zinc-500">TRAVELPAYOUTS_TOKEN</code>). Without it, Yatra still gives booking-timing advice. Use IATA airport codes (DEL, BOM, LHR, JFK, DXB).
+            </p>
+          </section>
         </main>
       )}
 

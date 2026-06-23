@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getDb, nanoid, Goal } from '@/lib/db'
+import { getDb, nanoid, Goal, Trip } from '@/lib/db'
 import { getTodayEvents, sendEmail } from '@/lib/google-calendar'
 import { SPHERE_AGENTS, runAllAgents } from '@/lib/sphere-agents'
+import { generateTravelCheckin, YATRA } from '@/lib/travel-agent'
 
 export async function POST() {
   const db = await getDb()
@@ -34,6 +35,35 @@ export async function POST() {
       args: [nanoid(), agent.sphereId, agent.name, checkin.message, JSON.stringify(checkin.questions), JSON.stringify(checkin.suggestions)],
     })
   }
+
+  // Yatra — travel agent: price-check watched trips and join the line-up
+  try {
+    const tripsResult = await db.execute('SELECT * FROM trips')
+    const trips = tripsResult.rows as unknown as Trip[]
+    if (trips.some(t => t.status === 'watching')) {
+      const priceHistory: Record<string, number> = {}
+      const historyResult = await db.execute(`
+        SELECT trip_id, price FROM price_checks pc
+        WHERE checked_at = (SELECT MAX(checked_at) FROM price_checks WHERE trip_id = pc.trip_id)
+      `)
+      for (const row of historyResult.rows) priceHistory[row.trip_id as string] = row.price as number
+
+      const travel = await generateTravelCheckin(trips, priceHistory, userName)
+      for (const q of travel.quotes) {
+        if (q.quote) {
+          await db.execute({
+            sql: `INSERT INTO price_checks (id, trip_id, price, currency, airline, depart_at, link) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            args: [nanoid(), q.id, q.quote.price, q.quote.currency, q.quote.airline, q.quote.departAt, q.quote.link],
+          })
+        }
+      }
+      await db.execute({
+        sql: 'INSERT INTO agent_checkins (id, sphere_id, agent_name, message, questions, suggestions) VALUES (?, ?, ?, ?, ?, ?)',
+        args: [nanoid(), YATRA.sphereId, YATRA.name, travel.message, JSON.stringify(travel.questions), JSON.stringify(travel.suggestions)],
+      })
+      results.push({ agent: YATRA, checkin: { message: travel.message, questions: travel.questions, suggestions: travel.suggestions } })
+    }
+  } catch {}
 
   const toEmail = process.env.USER_EMAIL
   if (toEmail) {
