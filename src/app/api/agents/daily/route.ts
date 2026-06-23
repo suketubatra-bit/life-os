@@ -69,7 +69,7 @@ export async function POST() {
   if (toEmail) {
     try {
       const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
-      await sendEmail({ to: toEmail, subject: `🧠 Your 8 agents checked in — ${today}`, html: agentEmailTemplate(results, userName) })
+      await sendEmail({ to: toEmail, subject: `🧠 Life OS morning brief — ${today}`, html: agentEmailTemplate(results, userName) })
     } catch {}
   }
 
@@ -101,32 +101,33 @@ function agentEmailTemplate(
   results: Array<{ agent: { name: string; emoji: string; sphereName: string; color: string }; checkin: { message: string; questions: string[]; suggestions: string[] } }>,
   userName: string
 ) {
-  const sections = results.map(({ agent, checkin }) => `
-    <tr><td style="padding:0 32px 24px;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border-radius:12px;overflow:hidden;">
-        <tr><td style="background:${agent.color};padding:12px 20px;">
-          <span style="font-size:16px;font-weight:700;color:#1f2937;">${agent.emoji} ${agent.name} <span style="font-weight:400;color:#6b7280;">— ${agent.sphereName}</span></span>
-        </td></tr>
-        <tr><td style="padding:16px 20px;color:#374151;font-size:14px;line-height:1.6;">
-          <p style="margin:0 0 12px;">${checkin.message}</p>
-          ${checkin.questions.length ? `<p style="margin:0 0 4px;font-weight:600;color:#6b7280;font-size:12px;text-transform:uppercase;">Questions for you</p>${checkin.questions.map(q => `<p style="margin:0 0 4px;color:#4b5563;">→ ${q}</p>`).join('')}` : ''}
-          ${checkin.suggestions.length ? `<p style="margin:12px 0 4px;font-weight:600;color:#6b7280;font-size:12px;text-transform:uppercase;">Suggestions</p>${checkin.suggestions.map(s => `<p style="margin:0 0 4px;color:#4b5563;">✦ ${s}</p>`).join('')}` : ''}
-        </td></tr>
-      </table>
-    </td></tr>`).join('')
+  const rows = results.map(({ agent, checkin }) =>
+    `<tr>
+      <td style="padding:4px 0;">
+        <span style="font-size:13px;font-weight:700;color:#111;">${agent.emoji} ${agent.name}</span>
+        <span style="font-size:12px;color:#6b7280;"> — ${agent.sphereName}</span>
+        <p style="margin:4px 0 0;font-size:13px;color:#374151;line-height:1.55;">${checkin.message}</p>
+      </td>
+    </tr>
+    <tr><td style="padding:8px 0;"><hr style="border:none;border-top:1px solid #f0f0f0;margin:0;"></td></tr>`
+  ).join('')
+
+  const appUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://life-os-suketubatra-bits-projects.vercel.app'
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:40px 20px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 16px;">
     <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;">
-        <tr><td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:24px 32px;">
-          <p style="margin:0;color:#fff;font-size:20px;font-weight:700;">🧠 Your Life OS Team</p>
-          <p style="margin:4px 0 0;color:rgba(255,255,255,.8);font-size:13px;">Good morning, ${userName}. Here's what your 8 agents have for you today.</p>
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:20px 28px;">
+          <p style="margin:0;color:#fff;font-size:18px;font-weight:700;">🧠 Life OS — morning brief</p>
+          <p style="margin:4px 0 0;color:rgba(255,255,255,.8);font-size:12px;">Good morning, ${userName}.</p>
         </td></tr>
-        ${sections}
-        <tr><td style="padding:16px 32px 32px;border-top:1px solid #f3f4f6;">
-          <p style="margin:0;color:#9ca3af;font-size:12px;">Life OS · 8 Sphere Agents</p>
+        <tr><td style="padding:20px 28px;">
+          <table width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+        </td></tr>
+        <tr><td style="padding:12px 28px 20px;border-top:1px solid #f3f4f6;text-align:center;">
+          <a href="${appUrl}" style="font-size:12px;color:#6366f1;text-decoration:none;">Open Life OS →</a>
         </td></tr>
       </table>
     </td></tr>

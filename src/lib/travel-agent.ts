@@ -117,11 +117,12 @@ Stay in character. Be specific and practical.`
   })
 
   const text = (response.content[0] as { type: string; text: string }).text
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
   let parsed: { message: string; questions: string[]; suggestions: string[] }
   try {
-    parsed = JSON.parse(text)
+    parsed = JSON.parse(cleaned)
   } catch {
-    parsed = { message: text.slice(0, 300), questions: [], suggestions: [] }
+    parsed = { message: cleaned.slice(0, 300), questions: [], suggestions: [] }
   }
 
   return { ...parsed, deals, quotes }

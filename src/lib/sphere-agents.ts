@@ -118,10 +118,11 @@ Stay in character. Be warm, specific, never generic.`
   })
 
   const text = (response.content[0] as { type: string; text: string }).text
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
   try {
-    return JSON.parse(text)
+    return JSON.parse(cleaned)
   } catch {
-    return { message: text.slice(0, 300), questions: [], suggestions: [] }
+    return { message: cleaned.slice(0, 300), questions: [], suggestions: [] }
   }
 }
 
